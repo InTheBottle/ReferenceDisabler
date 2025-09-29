@@ -1,24 +1,13 @@
 using Mutagen.Bethesda.Plugins;
-using Mutagen.Bethesda.Plugins.Records;
-using Mutagen.Bethesda.Skyrim;
-using Mutagen.Bethesda.WPF.Reflection.Attributes;
-using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace SRExteriorCitiesPatcher
+namespace LuxCSreferenceDisabler
 {
-
     public class Settings
     {
-        [SettingName("Fix deleted records?")]
-        [Tooltip("Set to true to also properly disable deleted records")]
-        public bool fixDeleted = false;
+        public bool debug { get; set; } = false;
 
-        [SettingName("Debug")]
-        [Tooltip("Activate all the debug messages")]
-        public bool debug = false;
+        // List of base objects (FormKeys) to disable
+        public HashSet<FormKey> TargetBaseObjects { get; set; } = new();
     }
 }

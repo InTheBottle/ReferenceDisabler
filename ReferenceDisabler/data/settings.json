@@ -1,4 +1,6 @@
 {
-    "fixDeleted": false,
-    "debug": false
+    "debug": true,
+    "TargetBaseObjects": [
+        "01240D~Lux.esp"
+    ]
 }
