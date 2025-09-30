@@ -60,6 +60,11 @@ namespace LuxCSreferenceDisabler
 
                 if (placed.Base.TryResolve<IPlaceableObjectGetter>(cache, out var baseObj))
                 {
+                    // If the item is already disabled, skip over it
+                    if (baseObj.SkyrimMajorRecordFlags.HasFlag(
+                            SkyrimMajorRecord.SkyrimMajorRecordFlag.InitiallyDisabled))
+                        continue;
+                    
                     if (targetKeys.Contains(baseObj.FormKey))
                     {
                         var placedState = placedContext.GetOrAddAsOverride(state.PatchMod);
@@ -98,22 +103,6 @@ namespace LuxCSreferenceDisabler
             }
 
             Console.WriteLine($"Properly disabled {_nbTotal} placed references!");
-
-            // Remove vanilla initially disabled records from patch
-            Console.WriteLine("Cleaning vanilla disabled records...");
-            var loadOrder = state.LoadOrder.PriorityOrder.Where(x => vanillaModKeys.Contains(x.ModKey));
-
-            foreach (var placed in loadOrder
-                .Where(x => x.Mod != null)
-                .SelectMany(x => x.Mod!.EnumerateMajorRecords<IPlacedGetter>())
-                .Where(r => r.SkyrimMajorRecordFlags.HasFlag(
-                    SkyrimMajorRecord.SkyrimMajorRecordFlag.InitiallyDisabled)))
-            {
-                state.PatchMod.Remove(placed.FormKey, placed.GetType());
-            }
-
-            Console.WriteLine("Done cleaning vanilla records!");
-            Console.WriteLine("Final count: " + _nbTotal);
         }
     }
 }
