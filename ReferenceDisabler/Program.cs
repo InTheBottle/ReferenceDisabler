@@ -1,15 +1,10 @@
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.FormKeys.SkyrimSE;
 using Mutagen.Bethesda.Plugins;
-using Mutagen.Bethesda.Plugins.Cache;
-using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using Mutagen.Bethesda.Synthesis;
 using Mutagen.Bethesda.WPF.Reflection.Attributes;
 using Noggog;
-using System.Linq;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace LuxCSreferenceDisabler
 {
@@ -17,7 +12,7 @@ namespace LuxCSreferenceDisabler
     {
         [SettingName("Base Objects to Disable")]
         [Tooltip("EditorIDs of the base objects you want to disable references of.")]
-        public List<FormLink<IPlaceableObjectGetter>> BaseObjectsToDisable { get; set; } = new();
+        public List<FormLink<IPlaceableObjectGetter>> BaseObjectsToDisable = [];
     }
 
     public class Program
@@ -35,11 +30,10 @@ namespace LuxCSreferenceDisabler
             ModKey.FromNameAndExtension("ccbgssse025-advdsgs.esm")
         };
 
-        internal static int nbTotal = 0;
+        private static int _nbTotal;
 
         private static Lazy<Settings> _settings = null!;
-        private static Settings Settings => _settings.Value;
-
+        
         public static async Task<int> Main(string[] args)
         {
             return await SynthesisPipeline.Instance
@@ -54,18 +48,23 @@ namespace LuxCSreferenceDisabler
             var cache = state.LinkCache;
 
             // Build a HashSet of target FormKeys for fast lookup, filter out empty FormLinks
-            var targetKeys = Settings.BaseObjectsToDisable
+            var targetKeys = _settings.Value.BaseObjectsToDisable
                 .Where(link => link.FormKey != FormKey.Null)
                 .Select(link => link.FormKey)
                 .ToHashSet();
 
-            System.Console.WriteLine("Disabling target objects...");
+            Console.WriteLine("Disabling target objects...");
             foreach (var placedContext in state.LoadOrder.PriorityOrder.PlacedObject().WinningContextOverrides(cache))
             {
                 var placed = placedContext.Record;
 
                 if (placed.Base.TryResolve<IPlaceableObjectGetter>(cache, out var baseObj))
                 {
+                    // If the item is already disabled, skip over it
+                    if (baseObj.SkyrimMajorRecordFlags.HasFlag(
+                            SkyrimMajorRecord.SkyrimMajorRecordFlag.InitiallyDisabled))
+                        continue;
+                    
                     if (targetKeys.Contains(baseObj.FormKey))
                     {
                         var placedState = placedContext.GetOrAddAsOverride(state.PatchMod);
@@ -96,30 +95,14 @@ namespace LuxCSreferenceDisabler
                                 -30000);
                         }
 
-                        nbTotal++;
-                        if (nbTotal % 50 == 0)
-                            System.Console.WriteLine($"Properly disabled {nbTotal} placed references...");
+                        _nbTotal++;
+                        if (_nbTotal % 50 == 0)
+                            Console.WriteLine($"Properly disabled {_nbTotal} placed references...");
                     }
                 }
             }
 
-            System.Console.WriteLine($"Properly disabled {nbTotal} placed references!");
-
-            // Remove vanilla initially disabled records from patch
-            System.Console.WriteLine("Cleaning vanilla disabled records...");
-            var loadOrder = state.LoadOrder.PriorityOrder.Where(x => vanillaModKeys.Contains(x.ModKey));
-
-            foreach (var placed in loadOrder
-                .Where(x => x.Mod != null)
-                .SelectMany(x => x.Mod!.EnumerateMajorRecords<IPlacedGetter>())
-                .Where(r => r.SkyrimMajorRecordFlags.HasFlag(
-                    SkyrimMajorRecord.SkyrimMajorRecordFlag.InitiallyDisabled)))
-            {
-                state.PatchMod.Remove(placed.FormKey, placed.GetType());
-            }
-
-            System.Console.WriteLine("Done cleaning vanilla records!");
-            System.Console.WriteLine("Final count: " + nbTotal);
+            Console.WriteLine($"Properly disabled {_nbTotal} placed references!");
         }
     }
 }
