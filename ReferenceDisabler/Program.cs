@@ -7,6 +7,9 @@ using Mutagen.Bethesda.Skyrim;
 using Mutagen.Bethesda.Synthesis;
 using Mutagen.Bethesda.WPF.Reflection.Attributes;
 using Noggog;
+using System.Linq;
+using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace LuxCSreferenceDisabler
 {
@@ -50,9 +53,9 @@ namespace LuxCSreferenceDisabler
         {
             var cache = state.LinkCache;
 
-            // Build a HashSet of target FormKeys for fast lookup
+            // Build a HashSet of target FormKeys for fast lookup, filter out empty FormLinks
             var targetKeys = Settings.BaseObjectsToDisable
-                .Where(link => link.IsSet)
+                .Where(link => link.FormKey != FormKey.Null)
                 .Select(link => link.FormKey)
                 .ToHashSet();
 
@@ -70,34 +73,34 @@ namespace LuxCSreferenceDisabler
                         // Mark as disabled
                         placedState.SkyrimMajorRecordFlags =
                             placedState.SkyrimMajorRecordFlags.SetFlag(
-                        SkyrimMajorRecord.SkyrimMajorRecordFlag.InitiallyDisabled, true);
+                                SkyrimMajorRecord.SkyrimMajorRecordFlag.InitiallyDisabled, true);
 
-                // Add EnableParent if missing
+                        // Add EnableParent if missing
                         if (placedState.EnableParent is null)
-                {
+                        {
                             placedState.EnableParent = new EnableParent
-                    {
-                        Reference = Skyrim.PlayerRef,
-                        Flags = EnableParent.Flag.SetEnableStateToOppositeOfParent
-                    };
-                }
+                            {
+                                Reference = Skyrim.PlayerRef,
+                                Flags = EnableParent.Flag.SetEnableStateToOppositeOfParent
+                            };
+                        }
                         placedState.EnableParent.Flags.SetFlag(
-                    EnableParent.Flag.SetEnableStateToOppositeOfParent, true);
+                            EnableParent.Flag.SetEnableStateToOppositeOfParent, true);
 
-                // Move underground
+                        // Move underground
                         if (placedState.Placement != null)
                         {
                             placedState.Placement.Position = new P3Float(
                                 placedState.Placement.Position.X,
                                 placedState.Placement.Position.Y,
-                    -30000);
+                                -30000);
                         }
 
-                nbTotal++;
-                if (nbTotal % 50 == 0)
-                    System.Console.WriteLine($"Properly disabled {nbTotal} placed references...");
-            }
-        }
+                        nbTotal++;
+                        if (nbTotal % 50 == 0)
+                            System.Console.WriteLine($"Properly disabled {nbTotal} placed references...");
+                    }
+                }
             }
 
             System.Console.WriteLine($"Properly disabled {nbTotal} placed references!");
