@@ -5,10 +5,18 @@ using Mutagen.Bethesda.Plugins.Cache;
 using Mutagen.Bethesda.Plugins.Records;
 using Mutagen.Bethesda.Skyrim;
 using Mutagen.Bethesda.Synthesis;
+using Mutagen.Bethesda.WPF.Reflection.Attributes;
 using Noggog;
 
 namespace LuxCSreferenceDisabler
 {
+    public class Settings
+    {
+        [SettingName("Base Objects to Disable")]
+        [Tooltip("EditorIDs of the base objects you want to disable references of.")]
+        public List<FormLink<IPlaceableObjectGetter>> BaseObjectsToDisable { get; set; } = new();
+    }
+
     public class Program
     {
         private static readonly HashSet<ModKey> vanillaModKeys = new()
@@ -26,8 +34,8 @@ namespace LuxCSreferenceDisabler
 
         internal static int nbTotal = 0;
 
-        public static Lazy<Settings> _settings = null!;
-        public static Settings Settings => _settings.Value;
+        private static Lazy<Settings> _settings = null!;
+        private static Settings Settings => _settings.Value;
 
         public static async Task<int> Main(string[] args)
         {
@@ -38,72 +46,69 @@ namespace LuxCSreferenceDisabler
                 .Run(args);
         }
 
-        internal static void DisableReference(
-            IPatcherState<ISkyrimMod, ISkyrimModGetter> state,
-            IModContext<ISkyrimMod, ISkyrimModGetter, IPlaced, IPlacedGetter> placed)
+        public static void RunPatch(IPatcherState<ISkyrimMod, ISkyrimModGetter> state)
         {
-            if (placed is null || placed.Record.Placement is null) return;
+            var cache = state.LinkCache;
 
-            var baseFormKeyProperty = placed.Record.GetType().GetProperty("Base");
-            if (baseFormKeyProperty == null) return;
-            var baseFormKeyValue = baseFormKeyProperty.GetValue(placed.Record);
-            if (baseFormKeyValue == null) return;
-            if (!Settings.TargetBaseObjects.Contains((FormKey)baseFormKeyValue)) return;
+            // Build a HashSet of target FormKeys for fast lookup
+            var targetKeys = Settings.BaseObjectsToDisable
+                .Where(link => link.IsSet)
+                .Select(link => link.FormKey)
+                .ToHashSet();
 
-            var placedState = placed.GetOrAddAsOverride(state.PatchMod);
-
-            // Ensure Placement is not null before accessing Position
-            if (placedState.Placement != null)
+            System.Console.WriteLine("Disabling target objects...");
+            foreach (var placedContext in state.LoadOrder.PriorityOrder.PlacedObject().WinningContextOverrides(cache))
             {
-                // Ensure InitiallyDisabled is set
-                placedState.SkyrimMajorRecordFlags =
-                    placedState.SkyrimMajorRecordFlags.SetFlag(
+                var placed = placedContext.Record;
+
+                if (placed.Base.TryResolve<IPlaceableObjectGetter>(cache, out var baseObj))
+                {
+                    if (targetKeys.Contains(baseObj.FormKey))
+                    {
+                        var placedState = placedContext.GetOrAddAsOverride(state.PatchMod);
+
+                        // Mark as disabled
+                        placedState.SkyrimMajorRecordFlags =
+                            placedState.SkyrimMajorRecordFlags.SetFlag(
                         SkyrimMajorRecord.SkyrimMajorRecordFlag.InitiallyDisabled, true);
 
                 // Add EnableParent if missing
-                if (placedState.EnableParent is null)
+                        if (placedState.EnableParent is null)
                 {
-                    placedState.EnableParent = new EnableParent
+                            placedState.EnableParent = new EnableParent
                     {
                         Reference = Skyrim.PlayerRef,
                         Flags = EnableParent.Flag.SetEnableStateToOppositeOfParent
                     };
                 }
-                placedState.EnableParent.Flags.SetFlag(
+                        placedState.EnableParent.Flags.SetFlag(
                     EnableParent.Flag.SetEnableStateToOppositeOfParent, true);
 
                 // Move underground
-                placedState.Placement.Position = new P3Float(
-                    placedState.Placement.Position.X,
-                    placedState.Placement.Position.Y,
+                        if (placedState.Placement != null)
+                        {
+                            placedState.Placement.Position = new P3Float(
+                                placedState.Placement.Position.X,
+                                placedState.Placement.Position.Y,
                     -30000);
+                        }
 
                 nbTotal++;
                 if (nbTotal % 50 == 0)
                     System.Console.WriteLine($"Properly disabled {nbTotal} placed references...");
             }
         }
-
-        public static void RunPatch(IPatcherState<ISkyrimMod, ISkyrimModGetter> state)
-        {
-            ILinkCache cache = state.LinkCache;
-            var loadorder = state.LoadOrder.PriorityOrder.Where(x => !vanillaModKeys.Contains(x.ModKey));
-
-            System.Console.WriteLine("Disabling target objects...");
-            foreach (var placed in loadorder.PlacedObject().WinningContextOverrides(cache))
-            {
-                DisableReference(state, placed);
             }
 
             System.Console.WriteLine($"Properly disabled {nbTotal} placed references!");
 
             // Remove vanilla initially disabled records from patch
             System.Console.WriteLine("Cleaning vanilla disabled records...");
-            loadorder = state.LoadOrder.PriorityOrder.Where(x => vanillaModKeys.Contains(x.ModKey));
+            var loadOrder = state.LoadOrder.PriorityOrder.Where(x => vanillaModKeys.Contains(x.ModKey));
 
-            foreach (var placed in loadorder
-                .Where(x => x.Mod != null) // Ensure x.Mod is not null
-                .SelectMany(x => x.Mod!.EnumerateMajorRecords<IPlacedGetter>()) // Use ! to suppress warning
+            foreach (var placed in loadOrder
+                .Where(x => x.Mod != null)
+                .SelectMany(x => x.Mod!.EnumerateMajorRecords<IPlacedGetter>())
                 .Where(r => r.SkyrimMajorRecordFlags.HasFlag(
                     SkyrimMajorRecord.SkyrimMajorRecordFlag.InitiallyDisabled)))
             {
